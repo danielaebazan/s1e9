@@ -1,32 +1,46 @@
 from flask import Flask, request, jsonify
+import numpy as np
 
 app = Flask(__name__)
 
 
-Pc = 10 # Presión crítica en MPa
-vc_liquid = 0.0035 # Volumen específico del líquido en m^3/kg
-vc_vapor = 0.0035 # Volumen específico del vapor en m^3/kg
+Pc = 10  # Critical pressure in MPa
+vc_liquid = 0.0035  # Critical specific volume of liquid in m^3/kg
+vc_vapor = 0.0035  # Critical specific volume of vapor in m^3/kg
 
-# Diccionario que simula la curva de cambio de fase en función de la presión
+# Expanded phase data
 phase_data = {
-    0.05: {"specific_volume_liquid": 0.00105, "specific_volume_vapor": 0.03},
-    10: {"specific_volume_liquid": vc_liquid, "specific_volume_vapor": vc_vapor},
+    0.01: {"specific_volume_liquid": 0.001, "specific_volume_vapor": 14.67},
+    1: {"specific_volume_liquid": 0.001043, "specific_volume_vapor": 0.1943},
+    5: {"specific_volume_liquid": 0.001156, "specific_volume_vapor": 0.03928},
+    Pc: {"specific_volume_liquid": vc_liquid, "specific_volume_vapor": vc_vapor},
 }
 
-# Ruta para obtener el diagrama de cambio de fase
+def interpolate(p):
+    pressures = np.array(list(phase_data.keys()))
+    v_liquids = np.array([data["specific_volume_liquid"] for data in phase_data.values()])
+    v_vapors = np.array([data["specific_volume_vapor"] for data in phase_data.values()])
+    
+    v_liquid = np.interp(p, pressures, v_liquids)
+    v_vapor = np.interp(p, pressures, v_vapors)
+    
+    return v_liquid, v_vapor
+
 @app.route('/phase-change-diagram')
 def phase_change_diagram():
-    pressure = float(request.args.get('pressure'))
-
-    # Verifica si la presión está en los datos
-    if pressure in phase_data:
-        # Devuelve el volumen específico de líquido y vapor
+    try:
+        pressure = float(request.args.get('pressure'))
+        if pressure <= 0 or pressure > Pc:
+            return jsonify({"error": "Pressure out of range"}), 400
+        
+        v_liquid, v_vapor = interpolate(pressure)
+        
         return jsonify({
-            "specific_volume_liquid": phase_data[pressure]["specific_volume_liquid"],
-            "specific_volume_vapor": phase_data[pressure]["specific_volume_vapor"]
+            "specific_volume_liquid": round(v_liquid, 7),
+            "specific_volume_vapor": round(v_vapor, 5)
         })
-    else:
-        return jsonify({"error": "Pressure data not found."}), 404
+    except ValueError:
+        return jsonify({"error": "Invalid pressure value"}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)
